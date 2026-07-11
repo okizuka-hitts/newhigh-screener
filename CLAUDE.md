@@ -24,6 +24,7 @@
 ## コマンド
 
 ```bash
-pip install -e ".[dev]"                                          # セットアップ
-ruff check . && pytest --cov=screener --cov-fail-under=90        # コミット前チェック
+pip install -e ".[dev]"   # セットアップ
 ```
+
+コミット前チェックは `.claude/rules/code-style.md` の**品質ゲート**を実行する(定義はそちらのみ)。

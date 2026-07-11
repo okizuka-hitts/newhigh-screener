@@ -1,5 +1,13 @@
 # コーディングスタイルガイド
 
+## 品質ゲート（前提条件・コミット前チェック）
+
+コマンドの定義は**本節のみ**。他のドキュメント・エージェントはここを参照し、重複記載しない。
+
+```bash
+ruff check . && pytest --cov=screener --cov-fail-under=90
+```
+
 ## 基本
 
 - Python 3.12+。フォーマット・Lintはruff（line-length 100、設定は `pyproject.toml` が正）

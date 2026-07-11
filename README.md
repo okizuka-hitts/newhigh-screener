@@ -27,9 +27,7 @@ screener tune --sector 3250 | --all
 このリポジトリはEPIC駆動ループで開発されています(JIRA NSプロジェクトが単一の真実)。
 開発プロセスは [CLAUDE.md](CLAUDE.md)、受け入れ検証の仕組みは [.claude/agents/verifier.md](.claude/agents/verifier.md) と [verification/](verification/) を参照してください。
 
-```bash
-ruff check . && pytest --cov=screener --cov-fail-under=90   # コミット前チェック
-```
+コミット前チェックは [.claude/rules/code-style.md](.claude/rules/code-style.md) の品質ゲートを実行してください。
 
 ## ライセンス
 
