@@ -12,6 +12,7 @@
 - 受け入れ検証は独立したVerifier(`.claude/agents/verifier.md`)が行い、記録はConfluence(スペース: NS)に蓄積する
 - 仕様変更は人間の承認を経て `spec/` を更新してからコミットする
 - 開発プロセスの詳細(ループ運用・JIRAワークフロー・テスト・コーディング・セキュリティ)は `.claude/rules/` を参照
+- JIRA/Confluenceの操作手順(cloudId・チケットタイプID・遷移ID・起票テンプレート)は `jira-ns` スキルを使う
 
 ## 制約
 
