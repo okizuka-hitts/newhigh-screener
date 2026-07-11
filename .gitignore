@@ -2,10 +2,6 @@
 .env
 data/
 
-# 初期構成案の原本(Word)
-init/
-*.docx
-
 # Python
 __pycache__/
 *.egg-info/
