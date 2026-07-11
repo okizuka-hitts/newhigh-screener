@@ -22,4 +22,5 @@ def test_tune_requires_sector_or_all():
 
 
 def test_unimplemented_command_returns_nonzero():
-    assert main(["fetch"]) == 1
+    # detect/tune は対応EPICで実装される。未実装コマンドは非0で終了する。
+    assert main(["detect", "--date", "2026-07-10"]) == 1
