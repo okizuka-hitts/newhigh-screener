@@ -1,4 +1,3 @@
 # verification/ 配下はVerifier(および人間)所有。実装ループによる変更を禁止する。
-# GitHub接続後にオーナーのGitHubアカウントを設定して有効化すること。
-# /verification/ @<owner>
-# /.claude/agents/verifier.md @<owner>
+/verification/ @okizuka-hitts
+/.claude/agents/verifier.md @okizuka-hitts
