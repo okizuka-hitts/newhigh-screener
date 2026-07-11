@@ -28,7 +28,7 @@ screener tune --sector 3250 | --all
 開発プロセスは [CLAUDE.md](CLAUDE.md)、受け入れ検証の仕組みは [.claude/agents/verifier.md](.claude/agents/verifier.md) と [verification/](verification/) を参照してください。
 
 ```bash
-ruff check . && pytest   # コミット前チェック
+ruff check . && pytest --cov=screener --cov-fail-under=90   # コミット前チェック
 ```
 
 ## ライセンス

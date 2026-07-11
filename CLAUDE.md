@@ -11,6 +11,7 @@
 - 各EPICの受け入れ基準が唯一の完了定義。スナップショットは `verification/acceptance/`(更新は人間のみ)
 - 受け入れ検証は独立したVerifier(`.claude/agents/verifier.md`)が行い、記録はConfluence(スペース: NS)に蓄積する
 - 仕様変更は人間の承認を経て `spec/` を更新してからコミットする
+- 開発プロセスの詳細(ループ運用・JIRAワークフロー・テスト・コーディング・セキュリティ)は `.claude/rules/` を参照
 
 ## 制約
 
@@ -22,6 +23,6 @@
 ## コマンド
 
 ```bash
-pip install -e ".[dev]"        # セットアップ
-ruff check . && pytest         # コミット前チェック
+pip install -e ".[dev]"                                          # セットアップ
+ruff check . && pytest --cov=screener --cov-fail-under=90        # コミット前チェック
 ```
