@@ -1,0 +1,16 @@
+# 秘匿情報・取得データ(リポジトリに含めない)
+.env
+data/
+
+# 初期構成案の原本(Word)
+init/
+*.docx
+
+# Python
+__pycache__/
+*.egg-info/
+dist/
+build/
+.venv/
+.pytest_cache/
+.ruff_cache/
