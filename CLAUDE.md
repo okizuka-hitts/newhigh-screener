@@ -3,14 +3,14 @@
 ## プロジェクト概要
 
 国内株式の新高値(52週高値更新)銘柄をスクリーニングするPython CLI。
-要件・制約・用語定義は `docs/overview.md` が正。
+要件・制約・用語定義は `spec/overview.md` が正。
 
 ## 開発プロセス(EPIC駆動ループ)
 
 - JIRA NSプロジェクト(hittslabs.atlassian.net)が単一の真実。EPIC単位で実装を進める
 - 各EPICの受け入れ基準が唯一の完了定義。スナップショットは `verification/acceptance/`(更新は人間のみ)
 - 受け入れ検証は独立したVerifier(`.claude/agents/verifier.md`)が行い、記録はConfluence(スペース: NS)に蓄積する
-- 仕様変更は人間の承認を経て `docs/` を更新してからコミットする
+- 仕様変更は人間の承認を経て `spec/` を更新してからコミットする
 
 ## 制約
 
