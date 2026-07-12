@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Sequence
 
 logger = logging.getLogger("screener.fetch")
 
@@ -25,6 +26,28 @@ def find_split_affected_codes(conn: sqlite3.Connection) -> list[str]:
         "SELECT DISTINCT code FROM daily_quotes "
         "WHERE adjustment_factor IS NOT NULL AND adjustment_factor <> 1 "
         "ORDER BY code"
+    ).fetchall()
+    return [r["code"] for r in rows]
+
+
+def find_split_affected_codes_in_dates(
+    conn: sqlite3.Connection, dates: Sequence[str]
+) -> list[str]:
+    """指定営業日群の行に AdjustmentFactor ≠ 1 を含む銘柄コードを返す(差分の分割検知)。
+
+    差分モードでは新規取得した営業日のみを対象に分割・併合を検知する。過去日は再取得
+    しないため、ここで検知した銘柄だけを by-code 再取得して過去系列を補正する(NS-17)。
+    値(日付)は自前の営業日カレンダー由来だが、SQLは必ずプレースホルダで渡す(security)。
+    """
+    date_list = list(dates)
+    if not date_list:
+        return []
+    placeholders = ", ".join("?" for _ in date_list)
+    rows = conn.execute(
+        "SELECT DISTINCT code FROM daily_quotes "
+        "WHERE adjustment_factor IS NOT NULL AND adjustment_factor <> 1 "
+        f"AND date IN ({placeholders}) ORDER BY code",
+        tuple(date_list),
     ).fetchall()
     return [r["code"] for r in rows]
 

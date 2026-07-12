@@ -8,6 +8,7 @@ from screener.fetch.adjust import (
     apply_adjustment,
     detect_and_adjust,
     find_split_affected_codes,
+    find_split_affected_codes_in_dates,
 )
 from screener.fetch.calendar import trading_days
 from screener.fetch.daily_quotes import fetch_daily_quotes, fetch_window
@@ -23,6 +24,7 @@ __all__ = [
     "fetch_statements",
     "detect_and_adjust",
     "find_split_affected_codes",
+    "find_split_affected_codes_in_dates",
     "apply_adjustment",
     "trading_days",
     "run_fetch",

@@ -23,7 +23,7 @@ import sqlite3
 import time as _time
 
 from screener.api.client import JQuantsClient
-from screener.fetch.adjust import detect_and_adjust
+from screener.fetch.adjust import detect_and_adjust, find_split_affected_codes_in_dates
 from screener.fetch.calendar import trading_days
 from screener.fetch.daily_quotes import fetch_daily_quotes, fetch_window
 from screener.fetch.listed_info import fetch_listed_info
@@ -106,7 +106,20 @@ def run_fetch(
     listed = fetch_listed_info(client, conn)
     quotes = fetch_daily_quotes(client, conn, reference_date=reference_date, dates=days)
     statements = fetch_statements(client, conn, reference_date=reference_date, dates=days)
-    adjusted = detect_and_adjust(conn)  # API再取得なし(補正済み系列は一括取得済み)
+
+    # 差分モードでは過去日を再取得しないため、新規営業日に分割・併合(AdjFactor≠1)を検知した
+    # 銘柄だけを by-code で全期間再取得し、過去日の補正済み系列(Adjustment*)を最新化する(NS-17)。
+    # フル取得モードは全期間を一括取得済みのため再取得しない(NS-12の最適化を維持)。
+    refetched = 0
+    if mode == "incremental":
+        split_codes = find_split_affected_codes_in_dates(conn, days)
+        if split_codes:
+            logger.info("差分に分割検知: %d銘柄を全期間再取得して過去補正 %s", len(split_codes), split_codes)
+            refetched = fetch_daily_quotes(
+                client, conn, reference_date=reference_date, codes=split_codes
+            )
+
+    adjusted = detect_and_adjust(conn)  # 補正済み列を主要列へ適用(過去データを上書き)
     elapsed = _time.monotonic() - started
     summary: dict[str, int | object] = {
         "skipped": False,
@@ -115,6 +128,7 @@ def run_fetch(
         "trading_days": len(days),
         "daily_quotes": quotes,
         "statements": statements,
+        "split_refetched": refetched,
         "adjusted_codes": len(adjusted),
         "elapsed_seconds": elapsed,
     }
