@@ -12,9 +12,15 @@ from screener import config
 from screener.api.client import HttpResponse, JQuantsClient
 from screener.api.rate_limiter import RateLimiter
 from screener.db import connect, init_db, upsert
-from screener.fetch import run_fetch
+from screener.fetch import find_split_affected_codes_in_dates, run_fetch
 
 CODE = "13010"
+
+
+def test_find_split_affected_codes_in_dates_empty_returns_empty():
+    conn = connect(":memory:")
+    init_db(conn)
+    assert find_split_affected_codes_in_dates(conn, []) == []
 
 
 def _weekdays(from_iso: str, to_iso: str) -> list[str]:

@@ -27,6 +27,7 @@ from screener.fetch.adjust import detect_and_adjust, find_split_affected_codes_i
 from screener.fetch.calendar import trading_days
 from screener.fetch.daily_quotes import fetch_daily_quotes, fetch_window
 from screener.fetch.listed_info import fetch_listed_info
+from screener.fetch.progress import ProgressReporter
 from screener.fetch.statements import fetch_statements
 
 logger = logging.getLogger("screener.fetch")
@@ -103,9 +104,19 @@ def run_fetch(
             reason="skip", message=message, elapsed=_time.monotonic() - started
         )
 
+    # 進行状況表示(NS-18): by-dateループ(日足+財務)の各営業日で1ステップ進める。
+    # TTYでは%・バー・ETAを更新表示、非TTYでは行単位ログにフォールバックする。
+    label = "初回フル取得" if mode == "full" else "差分取得"
+    reporter = ProgressReporter(total=len(days) * 2, label=label)
+
     listed = fetch_listed_info(client, conn)
-    quotes = fetch_daily_quotes(client, conn, reference_date=reference_date, dates=days)
-    statements = fetch_statements(client, conn, reference_date=reference_date, dates=days)
+    quotes = fetch_daily_quotes(
+        client, conn, reference_date=reference_date, dates=days, on_progress=reporter.advance
+    )
+    statements = fetch_statements(
+        client, conn, reference_date=reference_date, dates=days, on_progress=reporter.advance
+    )
+    reporter.finish()
 
     # 差分モードでは過去日を再取得しないため、新規営業日に分割・併合(AdjFactor≠1)を検知した
     # 銘柄だけを by-code で全期間再取得し、過去日の補正済み系列(Adjustment*)を最新化する(NS-17)。

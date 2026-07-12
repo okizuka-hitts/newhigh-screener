@@ -15,7 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from screener import config
@@ -70,6 +70,7 @@ def fetch_daily_quotes(
     reference_date: _dt.date | None = None,
     dates: Sequence[str] | None = None,
     codes: Sequence[str] | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> int:
     """日足を取得してDBへ保存する。保存件数(行数)を返す。
 
@@ -79,6 +80,7 @@ def fetch_daily_quotes(
         reference_date: 期間の基準日。省略時は本日。
         dates: by-dateで取得する営業日リスト。省略時はカレンダーから営業日を求める。
         codes: 指定時はby-code(銘柄別)で取得する(分割補正の再取得等)。
+        on_progress: by-dateループで1営業日処理するごとに呼ぶ進捗フック(NS-18)。
     """
     reference_date = reference_date or _dt.date.today()
     from_date, to_date = fetch_window(reference_date)
@@ -98,5 +100,7 @@ def fetch_daily_quotes(
     for day in day_list:
         items = client.get_paginated(config.DAILY_QUOTES_ENDPOINT, params={"date": day})
         total += _save(conn, items)
+        if on_progress is not None:
+            on_progress()
     logger.info("日足(by-date): %s〜%s / %d営業日 / 保存 %d件", from_date, to_date, len(day_list), total)
     return total
