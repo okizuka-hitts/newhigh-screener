@@ -3,6 +3,9 @@
 レート上限・DBパス・APIエンドポイント等をハードコードで散在させず、ここに一元化する
 (code-style.md「設定値・定数は1か所に集約」)。実行時に決まる値(APIキー・DBパス)は
 環境変数で上書き可能とし、取得用のヘルパ関数を提供する。
+
+APIは J-Quants API **V2** に準拠する(V1は廃止)。特定バージョンを前提にせず、値は最新の
+公式仕様(https://jpx-jquants.com/ja/spec)に合わせてここだけを更新する。
 """
 
 from __future__ import annotations
@@ -10,39 +13,42 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# --- J-Quants API エンドポイント ---------------------------------------------
+# --- J-Quants API (V2) エンドポイント ----------------------------------------
 
-#: J-Quants API のベースURL(ライトプラン)。
-JQUANTS_BASE_URL = "https://api.jquants.com/v1"
+#: J-Quants API のベースURL(V2)。
+JQUANTS_BASE_URL = "https://api.jquants.com/v2"
 
-#: idトークンをリフレッシュトークンから取得するエンドポイント。
-AUTH_REFRESH_ENDPOINT = "/token/auth_refresh"
 #: 上場銘柄一覧。
-LISTED_INFO_ENDPOINT = "/listed/info"
+LISTED_INFO_ENDPOINT = "/equities/master"
 #: 日足四本値。
-DAILY_QUOTES_ENDPOINT = "/prices/daily_quotes"
-#: 財務データ(四半期・通期)。
-STATEMENTS_ENDPOINT = "/fins/statements"
+DAILY_QUOTES_ENDPOINT = "/equities/bars/daily"
+#: 財務サマリ(四半期・通期)。V2ライトプランで利用可能(/fins/details はライト対象外)。
+STATEMENTS_ENDPOINT = "/fins/summary"
+#: 取引カレンダー(営業日・休日区分)。
+CALENDAR_ENDPOINT = "/markets/calendar"
 
-# --- 認証・機密情報 -----------------------------------------------------------
+#: V2レスポンスの配列ラッパのキー(全エンドポイント共通)。
+RESPONSE_DATA_KEY = "data"
 
-#: リフレッシュトークン(=APIキー)を格納する環境変数名。値そのものは扱わない。
+# --- 認証・機密情報(V2) -----------------------------------------------------
+
+#: APIキーを格納する環境変数名。値そのものは扱わない。
 API_KEY_ENV = "JQUANTS_API_KEY"
+#: V2認証はこのHTTPヘッダにAPIキーを載せる(静的キー。トークンのリフレッシュは無い)。
+API_KEY_HEADER = "X-API-KEY"
 
 # --- レート制限(NFR-1) ------------------------------------------------------
-# J-Quantsライトプランへのアクセス頻度を制御するための定数。実際のアクセスは
-# この上限に安全係数を掛けた「実効上限」以内に収める(EPIC NS-1 受け入れ基準)。
-# 上限値はJ-Quantsの公表値に基づく保守的な既定値であり、必要に応じてここだけを更新する。
+# J-Quants V2のプラン別レート上限(リクエスト/分)。実際のアクセスは上限に安全係数を
+# 掛けた「実効上限」以内に収める(EPIC NS-1 受け入れ基準)。上限値は公式仕様の値を用い、
+# 変更時はここだけを更新する。V2ライトプランの公表値 = 60 req/min。
 
-#: ライトプランで許容すると想定するリクエスト数(毎分)。保守的な既定値。
-JQUANTS_RATE_LIMIT_PER_MIN = 300
+#: ライトプランのリクエスト上限(毎分)。J-Quants V2公式のレートリミット表より。
+JQUANTS_RATE_LIMIT_PER_MIN = 60
 #: 上限に対する安全係数。実装+検証の合計でこの割合以内に抑える(50%)。
 RATE_SAFETY_FACTOR = 0.5
 
-# --- HTTP / トークン ----------------------------------------------------------
+# --- HTTP ---------------------------------------------------------------------
 
-#: idトークンの有効期間(秒)。J-Quantsは約24時間有効だが、余裕を持って再取得する。
-ID_TOKEN_TTL_SECONDS = 23 * 60 * 60
 #: HTTPリクエストのタイムアウト(秒)。
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
@@ -70,14 +76,14 @@ def effective_rate_limit_per_min() -> float:
 
 
 def get_api_key() -> str:
-    """`.env`/環境変数からリフレッシュトークン(APIキー)を取得する。
+    """`.env`/環境変数からAPIキー(V2の X-API-KEY 値)を取得する。
 
     未設定なら、キー値を漏らさない明確なメッセージで `RuntimeError` を送出する。
     """
     key = os.environ.get(API_KEY_ENV)
     if not key:
         raise RuntimeError(
-            f"環境変数 {API_KEY_ENV} が未設定です。.env に J-Quants のリフレッシュトークンを設定してください。"
+            f"環境変数 {API_KEY_ENV} が未設定です。.env に J-Quants(V2)のAPIキーを設定してください。"
         )
     return key
 

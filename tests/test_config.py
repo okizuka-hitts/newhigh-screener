@@ -1,4 +1,4 @@
-"""config モジュールのテスト(定数の存在・実効レート・環境変数の取得)。"""
+"""config モジュールのテスト(定数の存在・実効レート・環境変数の取得)。V2準拠。"""
 
 from pathlib import Path
 
@@ -9,20 +9,28 @@ from screener import config
 
 def test_endpoints_and_base_url_present():
     assert config.JQUANTS_BASE_URL.startswith("https://")
-    assert config.AUTH_REFRESH_ENDPOINT.startswith("/")
-    assert config.LISTED_INFO_ENDPOINT.startswith("/")
-    assert config.DAILY_QUOTES_ENDPOINT.startswith("/")
-    assert config.STATEMENTS_ENDPOINT.startswith("/")
+    assert config.JQUANTS_BASE_URL.endswith("/v2")
+    assert config.LISTED_INFO_ENDPOINT == "/equities/master"
+    assert config.DAILY_QUOTES_ENDPOINT == "/equities/bars/daily"
+    assert config.STATEMENTS_ENDPOINT == "/fins/summary"
+    assert config.CALENDAR_ENDPOINT == "/markets/calendar"
+    assert config.RESPONSE_DATA_KEY == "data"
+
+
+def test_v2_auth_is_static_api_key_header():
+    # V2はX-API-KEYヘッダの静的キー。トークンリフレッシュ関連の定数は持たない。
+    assert config.API_KEY_HEADER == "X-API-KEY"
+    assert config.API_KEY_ENV == "JQUANTS_API_KEY"
+    assert not hasattr(config, "AUTH_REFRESH_ENDPOINT")
+    assert not hasattr(config, "ID_TOKEN_TTL_SECONDS")
 
 
 def test_rate_limit_constants_and_safety_factor():
     assert config.RATE_SAFETY_FACTOR == 0.5
-    assert config.JQUANTS_RATE_LIMIT_PER_MIN > 0
-    # 実効上限は上限×安全係数(50%)。
-    assert config.effective_rate_limit_per_min() == pytest.approx(
-        config.JQUANTS_RATE_LIMIT_PER_MIN * 0.5
-    )
-    # 実効上限は必ず生の上限より小さい(=絞り込みが効いている)。
+    # V2ライトプランの公表上限 = 60 req/min。
+    assert config.JQUANTS_RATE_LIMIT_PER_MIN == 60
+    # 実効上限は上限×安全係数(50%) = 30 req/min。
+    assert config.effective_rate_limit_per_min() == pytest.approx(30.0)
     assert config.effective_rate_limit_per_min() < config.JQUANTS_RATE_LIMIT_PER_MIN
 
 
@@ -32,15 +40,14 @@ def test_fetch_window_constants():
 
 
 def test_get_api_key_from_env(monkeypatch):
-    monkeypatch.setenv(config.API_KEY_ENV, "dummy-refresh-token")
-    assert config.get_api_key() == "dummy-refresh-token"
+    monkeypatch.setenv(config.API_KEY_ENV, "dummy-api-key")
+    assert config.get_api_key() == "dummy-api-key"
 
 
 def test_get_api_key_missing_raises_without_leaking(monkeypatch):
     monkeypatch.delenv(config.API_KEY_ENV, raising=False)
     with pytest.raises(RuntimeError) as excinfo:
         config.get_api_key()
-    # メッセージに環境変数名は出てよいが、鍵の値そのものは扱っていない。
     assert config.API_KEY_ENV in str(excinfo.value)
 
 

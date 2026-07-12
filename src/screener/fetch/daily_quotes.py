@@ -1,8 +1,8 @@
 """日足四本値・出来高(daily_quotes)の取得と保存。
 
-J-Quants `/prices/daily_quotes` を銘柄別に取得し、直近3か月＋過去52週を満たす期間で
-`daily_quotes` テーブルへ冪等にupsertする。分割補正に必要な AdjustmentFactor 等の列も
-併せて保存する(補正処理本体はNS-10)。
+J-Quants(V2) `/equities/bars/daily` を銘柄別に取得し、直近3か月＋過去52週を満たす期間で
+`daily_quotes` テーブルへ冪等にupsertする。分割補正に必要な AdjFactor 等の列も併せて
+保存する(補正処理本体はNS-10)。
 """
 
 from __future__ import annotations
@@ -19,8 +19,6 @@ from screener.db import upsert
 
 logger = logging.getLogger("screener.fetch")
 
-_DATA_KEY = "daily_quotes"
-
 
 def fetch_window(reference: _dt.date) -> tuple[str, str]:
     """取得期間 (from, to) をISO文字列で返す。
@@ -32,21 +30,25 @@ def fetch_window(reference: _dt.date) -> tuple[str, str]:
 
 
 def _row_from_api(item: dict[str, Any]) -> dict[str, Any]:
-    """APIの1日足レコードを daily_quotes の行に変換する。"""
+    """APIの1日足レコードを daily_quotes の行に変換する。
+
+    V2 `/equities/bars/daily` のフィールド: Date, Code, O/H/L/C(四本値),
+    Vo(出来高), AdjFactor(調整係数), AdjO/AdjH/AdjL/AdjC(調整後四本値), AdjVo(調整後出来高)。
+    """
     return {
         "code": item.get("Code"),
         "date": item.get("Date"),
-        "open": item.get("Open"),
-        "high": item.get("High"),
-        "low": item.get("Low"),
-        "close": item.get("Close"),
-        "volume": item.get("Volume"),
-        "adjustment_factor": item.get("AdjustmentFactor"),
-        "adjustment_open": item.get("AdjustmentOpen"),
-        "adjustment_high": item.get("AdjustmentHigh"),
-        "adjustment_low": item.get("AdjustmentLow"),
-        "adjustment_close": item.get("AdjustmentClose"),
-        "adjustment_volume": item.get("AdjustmentVolume"),
+        "open": item.get("O"),
+        "high": item.get("H"),
+        "low": item.get("L"),
+        "close": item.get("C"),
+        "volume": item.get("Vo"),
+        "adjustment_factor": item.get("AdjFactor"),
+        "adjustment_open": item.get("AdjO"),
+        "adjustment_high": item.get("AdjH"),
+        "adjustment_low": item.get("AdjL"),
+        "adjustment_close": item.get("AdjC"),
+        "adjustment_volume": item.get("AdjVo"),
     }
 
 
@@ -77,8 +79,7 @@ def fetch_daily_quotes(
     for code in target:
         items = client.get_paginated(
             config.DAILY_QUOTES_ENDPOINT,
-            _DATA_KEY,
-            {"code": code, "from": from_date, "to": to_date},
+            params={"code": code, "from": from_date, "to": to_date},
         )
         rows = [_row_from_api(i) for i in items if i.get("Code") and i.get("Date")]
         total += upsert(conn, "daily_quotes", rows)

@@ -1,7 +1,8 @@
 """財務データ(statements)の取得と保存。
 
-J-Quants `/fins/statements` を取得し、四半期・通期の財務値を `statements` テーブルへ
-冪等にupsertする。DisclosureNumber を主キーとして重複を防ぐ。
+J-Quants(V2) `/fins/summary` を取得し、四半期・通期の財務値を `statements` テーブルへ
+冪等にupsertする。DiscNo(開示番号)を主キーとして重複を防ぐ。
+(BS/PL/CF明細の `/fins/details` はライトプラン対象外のため使用しない。)
 """
 
 from __future__ import annotations
@@ -17,8 +18,6 @@ from screener.db import upsert
 
 logger = logging.getLogger("screener.fetch")
 
-_DATA_KEY = "statements"
-
 
 def _to_float(value: Any) -> float | None:
     """J-Quantsの数値は文字列や空文字で来るため、安全にfloat化する。"""
@@ -31,18 +30,23 @@ def _to_float(value: Any) -> float | None:
 
 
 def _row_from_api(item: dict[str, Any]) -> dict[str, Any]:
-    """APIの1財務レコードを statements の行に変換する。"""
+    """APIの1財務レコードを statements の行に変換する。
+
+    V2 `/fins/summary` のフィールド: DiscNo(開示番号), Code, DiscDate(開示日),
+    CurPerType(当会計期間種別 1Q/2Q/3Q/FY), DocType(書類種別), Sales(売上高),
+    OP(営業利益), OdP(経常利益), NP(当期純利益), CurFYEn(当会計年度末)。
+    """
     return {
-        "disclosure_number": item.get("DisclosureNumber"),
-        "code": item.get("LocalCode") or item.get("Code"),
-        "disclosed_date": item.get("DisclosedDate"),
-        "type_of_current_period": item.get("TypeOfCurrentPeriod"),
-        "type_of_document": item.get("TypeOfDocument"),
-        "net_sales": _to_float(item.get("NetSales")),
-        "operating_profit": _to_float(item.get("OperatingProfit")),
-        "ordinary_profit": _to_float(item.get("OrdinaryProfit")),
-        "profit": _to_float(item.get("Profit")),
-        "fiscal_year_end": item.get("CurrentFiscalYearEndDate"),
+        "disclosure_number": item.get("DiscNo"),
+        "code": item.get("Code"),
+        "disclosed_date": item.get("DiscDate"),
+        "type_of_current_period": item.get("CurPerType"),
+        "type_of_document": item.get("DocType"),
+        "net_sales": _to_float(item.get("Sales")),
+        "operating_profit": _to_float(item.get("OP")),
+        "ordinary_profit": _to_float(item.get("OdP")),
+        "profit": _to_float(item.get("NP")),
+        "fiscal_year_end": item.get("CurFYEn"),
     }
 
 
@@ -67,8 +71,8 @@ def fetch_statements(
 
     total = 0
     for code in target:
-        items = client.get_paginated(config.STATEMENTS_ENDPOINT, _DATA_KEY, {"code": code})
-        rows = [_row_from_api(i) for i in items if i.get("DisclosureNumber")]
+        items = client.get_paginated(config.STATEMENTS_ENDPOINT, params={"code": code})
+        rows = [_row_from_api(i) for i in items if i.get("DiscNo")]
         total += upsert(conn, "statements", rows)
     logger.info("財務データ: 保存 %d件", total)
     return total

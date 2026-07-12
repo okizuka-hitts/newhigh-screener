@@ -1,4 +1,4 @@
-"""JQuantsClient のテスト(認証・自動更新・401再試行・ページング・注入フック・秘匿)。
+"""JQuantsClient(V2) のテスト(X-API-KEY認証・ページング・注入フック・秘匿・異常系)。
 
 すべて注入フック(スタブトランスポート)経由でネットワークを使わない。
 """
@@ -6,19 +6,17 @@
 import logging
 
 import pytest
-
 from helpers import FakeClock
 
 from screener import config
 from screener.api.client import HttpResponse, JQuantsClient
 from screener.api.rate_limiter import RateLimiter
 
-REFRESH_TOKEN = "refresh-secret-xyz"
-ID_TOKEN = "id-token-abc123"
+API_KEY = "secret-api-key-xyz"
 
 
 class StubTransport:
-    """呼び出しを記録し、キューまたはハンドラで応答を返す注入フック。"""
+    """呼び出しを記録し、ハンドラで応答を返す注入フック。"""
 
     def __init__(self, handler):
         self.handler = handler
@@ -34,118 +32,52 @@ class StubTransport:
 def _client(handler):
     clock = FakeClock()
     limiter = RateLimiter(
-        config.effective_rate_limit_per_min(),
-        time_func=clock.time,
-        sleep_func=clock.sleep,
+        config.effective_rate_limit_per_min(), time_func=clock.time, sleep_func=clock.sleep
     )
     transport = StubTransport(handler)
-    client = JQuantsClient(
-        api_key=REFRESH_TOKEN,
-        transport=transport,
-        rate_limiter=limiter,
-        time_func=clock.time,
-    )
-    return client, transport, clock
+    client = JQuantsClient(api_key=API_KEY, transport=transport, rate_limiter=limiter)
+    return client, transport
 
 
-def _auth_ok(params):
-    assert params["refreshtoken"] == REFRESH_TOKEN
-    return HttpResponse(200, {"idToken": ID_TOKEN})
-
-
-def test_refresh_id_token_and_use_bearer():
+def test_sends_api_key_header():
     def handler(method, url, params, headers, body):
-        if url.endswith(config.AUTH_REFRESH_ENDPOINT):
-            return _auth_ok(params)
-        assert headers["Authorization"] == f"Bearer {ID_TOKEN}"
+        assert headers[config.API_KEY_HEADER] == API_KEY
+        assert "Authorization" not in headers  # Bearer方式は使わない
         return HttpResponse(200, {"data": [{"x": 1}]})
 
-    client, transport, _ = _client(handler)
-    payload = client.get_paginated("/x", "data")
-    assert payload == [{"x": 1}]
-    # 1回目: auth_refresh、2回目: データ取得。
-    assert transport.calls[0]["url"].endswith(config.AUTH_REFRESH_ENDPOINT)
+    client, transport = _client(handler)
+    assert client.get_paginated("/equities/master") == [{"x": 1}]
+    # V2は認証エンドポイントを踏まず、いきなりデータ取得(1リクエスト)。
+    assert len(transport.calls) == 1
+    assert transport.calls[0]["url"].endswith("/equities/master")
 
 
-def test_token_is_cached_between_requests():
-    auth_count = {"n": 0}
-
+def test_default_data_key_is_data():
     def handler(method, url, params, headers, body):
-        if url.endswith(config.AUTH_REFRESH_ENDPOINT):
-            auth_count["n"] += 1
-            return _auth_ok(params)
-        return HttpResponse(200, {"data": []})
+        return HttpResponse(200, {"data": [{"a": 1}, {"a": 2}]})
 
-    client, _, _ = _client(handler)
-    client.get_paginated("/a", "data")
-    client.get_paginated("/b", "data")
-    assert auth_count["n"] == 1  # TTL内は再認証しない
+    client, _ = _client(handler)
+    assert client.get_paginated("/x") == [{"a": 1}, {"a": 2}]
 
 
-def test_token_refreshes_after_ttl_expiry():
-    auth_count = {"n": 0}
-
-    def handler(method, url, params, headers, body):
-        if url.endswith(config.AUTH_REFRESH_ENDPOINT):
-            auth_count["n"] += 1
-            return _auth_ok(params)
-        return HttpResponse(200, {"data": []})
-
-    client, _, clock = _client(handler)
-    client.get_paginated("/a", "data")
-    clock.now += config.ID_TOKEN_TTL_SECONDS + 1  # 有効期限切れ
-    client.get_paginated("/b", "data")
-    assert auth_count["n"] == 2
-
-
-def test_401_triggers_single_refresh_and_retry():
-    state = {"auth": 0, "get": 0}
-
-    def handler(method, url, params, headers, body):
-        if url.endswith(config.AUTH_REFRESH_ENDPOINT):
-            state["auth"] += 1
-            return _auth_ok(params)
-        state["get"] += 1
-        if state["get"] == 1:
-            return HttpResponse(401, {})  # 最初は失効
-        return HttpResponse(200, {"data": [{"ok": True}]})
-
-    client, _, _ = _client(handler)
-    result = client.get_paginated("/x", "data")
-    assert result == [{"ok": True}]
-    assert state["auth"] == 2  # 初回 + 401後の再取得
-    assert state["get"] == 2
-
-
-def test_auth_failure_raises_without_leaking_secret():
+def test_non_200_raises_with_status():
     def handler(method, url, params, headers, body):
         return HttpResponse(403, {"message": "forbidden"})
 
-    client, _, _ = _client(handler)
+    client, _ = _client(handler)
     with pytest.raises(RuntimeError) as excinfo:
-        client.get_paginated("/x", "data")
-    assert REFRESH_TOKEN not in str(excinfo.value)
+        client.get_paginated("/x")
+    assert "403" in str(excinfo.value)
 
 
-def test_missing_id_token_in_response_raises():
+def test_error_does_not_leak_api_key():
     def handler(method, url, params, headers, body):
-        return HttpResponse(200, {})  # idToken 欠落
-
-    client, _, _ = _client(handler)
-    with pytest.raises(RuntimeError):
-        client.get_paginated("/x", "data")
-
-
-def test_non_200_data_error_raises():
-    def handler(method, url, params, headers, body):
-        if url.endswith(config.AUTH_REFRESH_ENDPOINT):
-            return _auth_ok(params)
         return HttpResponse(500, {})
 
-    client, _, _ = _client(handler)
+    client, _ = _client(handler)
     with pytest.raises(RuntimeError) as excinfo:
-        client.get_paginated("/x", "data")
-    assert "500" in str(excinfo.value)
+        client.get_paginated("/x")
+    assert API_KEY not in str(excinfo.value)
 
 
 def test_pagination_aggregates_all_pages():
@@ -156,43 +88,60 @@ def test_pagination_aggregates_all_pages():
     }
 
     def handler(method, url, params, headers, body):
-        if url.endswith(config.AUTH_REFRESH_ENDPOINT):
-            return _auth_ok(params)
         key = params.get("pagination_key") if params else None
         return HttpResponse(200, pages[key])
 
-    client, _, _ = _client(handler)
-    result = client.get_paginated("/prices", "data")
-    assert result == [{"i": 1}, {"i": 2}, {"i": 3}]
+    client, _ = _client(handler)
+    assert client.get_paginated("/prices") == [{"i": 1}, {"i": 2}, {"i": 3}]
 
 
-def test_secret_and_token_not_logged(caplog):
+def test_single_page_when_no_pagination_key():
     def handler(method, url, params, headers, body):
-        if url.endswith(config.AUTH_REFRESH_ENDPOINT):
-            return _auth_ok(params)
+        return HttpResponse(200, {"data": [{"i": 1}, {"i": 2}]})
+
+    client, transport = _client(handler)
+    assert client.get_paginated("/x") == [{"i": 1}, {"i": 2}]
+    assert len(transport.calls) == 1  # 追加ページ取得はしない
+
+
+def test_query_params_passed_through():
+    seen = {}
+
+    def handler(method, url, params, headers, body):
+        seen.update(params or {})
         return HttpResponse(200, {"data": []})
 
-    client, _, _ = _client(handler)
+    client, _ = _client(handler)
+    client.get_paginated("/equities/bars/daily", params={"code": "13010", "from": "2026-01-01"})
+    assert seen["code"] == "13010" and seen["from"] == "2026-01-01"
+
+
+def test_api_key_not_logged(caplog):
+    def handler(method, url, params, headers, body):
+        return HttpResponse(200, {"data": []})
+
+    client, _ = _client(handler)
     with caplog.at_level(logging.DEBUG, logger="screener.api"):
-        client.get_paginated("/x", "data")
+        client.get_paginated("/x")
     text = "\n".join(r.getMessage() for r in caplog.records)
-    assert REFRESH_TOKEN not in text
-    assert ID_TOKEN not in text
-    # 実測レートはログに出る。
+    assert API_KEY not in text
     assert "実測リクエストレート" in text
 
 
-def test_default_transport_covered(monkeypatch):
-    # 既定トランスポート(urllib)をネットワークなしで通す。
-    import io
+def test_uses_config_key_when_omitted(monkeypatch):
+    monkeypatch.setenv(config.API_KEY_ENV, "env-key")
+    client = JQuantsClient(transport=lambda *a, **k: HttpResponse(200, {"data": []}))
+    assert client._api_key == "env-key"
 
+
+def test_default_transport_covered(monkeypatch):
     from screener.api import client as client_mod
 
     class FakeResp:
         status = 200
 
         def read(self):
-            return b'{"idToken": "t"}'
+            return b'{"data": [{"Code": "13010"}]}'
 
         def __enter__(self):
             return self
@@ -202,15 +151,15 @@ def test_default_transport_covered(monkeypatch):
 
     def fake_urlopen(req, timeout=None):
         assert req.full_url.startswith("https://")
+        assert req.get_header(config.API_KEY_HEADER.capitalize()) == "k"  # ヘッダに載る
         return FakeResp()
 
     monkeypatch.setattr(client_mod.urllib.request, "urlopen", fake_urlopen)
     resp = client_mod._default_transport(
-        "POST", config.JQUANTS_BASE_URL + config.AUTH_REFRESH_ENDPOINT, params={"refreshtoken": "x"}
+        "GET", config.JQUANTS_BASE_URL + "/equities/master", headers={config.API_KEY_HEADER: "k"}
     )
     assert resp.status_code == 200
-    assert resp.json()["idToken"] == "t"
-    _ = io  # noqa: F841 (import 経由の網羅確認用)
+    assert resp.json()["data"][0]["Code"] == "13010"
 
 
 def test_default_transport_http_error(monkeypatch):
@@ -222,13 +171,6 @@ def test_default_transport_http_error(monkeypatch):
         raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, None)
 
     monkeypatch.setattr(client_mod.urllib.request, "urlopen", fake_urlopen)
-    resp = client_mod._default_transport("GET", "https://api.jquants.com/v1/x", headers={"A": "b"})
+    resp = client_mod._default_transport("GET", "https://api.jquants.com/v2/x", headers={"A": "b"})
     assert resp.status_code == 403
     assert resp.json() == {}
-
-
-def test_default_transport_uses_real_config_key(monkeypatch):
-    # api_key 省略時は config.get_api_key() を使う経路の確認。
-    monkeypatch.setenv(config.API_KEY_ENV, "env-token")
-    client = JQuantsClient(transport=lambda *a, **k: HttpResponse(200, {"idToken": "z"}))
-    assert client._api_key == "env-token"
