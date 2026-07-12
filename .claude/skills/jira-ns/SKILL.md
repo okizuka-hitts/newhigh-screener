@@ -15,7 +15,8 @@ NSプロジェクトのチケット操作は claude.ai 連携の Atlassian Rovo 
 |---|---|
 | cloudId | `8f3edd0c-e639-4dee-8955-5caf0d1addf6`(= hittslabs.atlassian.net) |
 | プロジェクト | キー `NS` / ID `10066` |
-| Confluence 検証記録スペース | `NS`(詳細は `verification/config.md`) |
+| Confluence 検証記録スペース | キー `N` / spaceId `12353538`(newhigh-screener) |
+| Confluence 記録ルートページ | `verifications` / pageId `12222467`(詳細は `verification/config.md`) |
 
 ### チケットタイプID
 
@@ -116,11 +117,14 @@ addCommentToJiraIssue { cloudId, issueIdOrKey: "NS-5", commentBody: "..." }
 ### Confluence 検証記録(Verifier専用)
 
 ```
-getConfluenceSpaces / createConfluencePage / updateConfluencePage
+createConfluencePage { cloudId, spaceId: "12353538", parentId: "<親ページID>", title, body }
+searchConfluenceUsingCql / getConfluencePage / updateConfluencePage
 ```
 
-- 1検証実行=1ページ(モード問わず)。スペース `NS` に、EPIC受け入れ検証は `[EPICキー] 検証記録 YYYY-MM-DD #連番 (判定)`、ストーリー検証は `[チケットキー] 検証記録 YYYY-MM-DD #連番 (判定)` を作成する
-- いずれも親ページは `[EPICキー] 検証履歴` 索引。実行日・対象チケット・モード・判定・ページリンクを追記する
+- ページ階層: `verifications`(pageId `12222467`) → `[EPICキー] 検証履歴`(索引) → 記録ページ
+- 索引ページの特定: `searchConfluenceUsingCql { cql: 'space = N AND title ~ "[EPICキー] 検証履歴"' }`。無ければ `parentId: "12222467"` で作成する
+- 1検証実行=1ページ(モード問わず)。EPIC受け入れ検証は `[EPICキー] 検証記録 YYYY-MM-DD #連番 (判定)`、ストーリー検証は `[チケットキー] 検証記録 YYYY-MM-DD #連番 (判定)` を、`parentId: <索引ページID>` で作成する
+- 索引ページに実行日・対象チケット・モード・判定・ページリンクを追記する(`updateConfluencePage`)
 - ページ作成後、対象チケットへ要約・判定・ページURLをコメントする(`addCommentToJiraIssue`)
 - J-Quantsの生データを本文・添付に含めない(集計結果のみ)
 

@@ -9,7 +9,7 @@
 
 - JIRA NSプロジェクト(hittslabs.atlassian.net)が単一の真実。EPIC単位で実装を進める
 - 各EPICの受け入れ基準が唯一の完了定義。スナップショットは `verification/acceptance/`(更新は人間のみ)
-- 受け入れ検証は独立したVerifier(`.claude/agents/verifier.md`)が行い、記録はConfluence(スペース: NS)に蓄積する
+- 受け入れ検証は独立したVerifier(`.claude/agents/verifier.md`)が行い、記録はConfluence(スペース `N` の `verifications` 配下。詳細は `verification/config.md`)に蓄積する
 - 仕様変更は人間の承認を経て `spec/` を更新してからコミットする
 - 開発プロセスの詳細(ループ運用・JIRAワークフロー・テスト・コーディング・セキュリティ)は `.claude/rules/` を参照
 - JIRA/Confluenceの操作手順(cloudId・チケットタイプID・遷移ID・起票テンプレート)は `jira-ns` スキルを使う
