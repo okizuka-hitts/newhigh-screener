@@ -15,7 +15,6 @@ import logging
 import sqlite3
 
 from screener.api.client import JQuantsClient
-from screener.fetch.daily_quotes import fetch_daily_quotes
 
 logger = logging.getLogger("screener.fetch")
 
@@ -57,18 +56,25 @@ def detect_and_adjust(
     *,
     reference_date: _dt.date | None = None,
 ) -> list[str]:
-    """分割・併合を検知し、該当銘柄を再取得・補正する。補正した銘柄コード一覧を返す。
+    """分割・併合を検知し、該当銘柄の主要列を補正済み系列で更新する。補正した銘柄コード一覧を返す。
+
+    日足は by-date 一括取得(`fetch_daily_quotes`)で全銘柄の補正済み列(Adjustment*)が
+    毎回DBへ入るため、ここでは**銘柄別の再取得APIを行わず**、DB上の補正済み列を主要列へ
+    反映する(`apply_adjustment`)のみとする。これにより実行毎の不要な再取得を撤廃し、
+    J-Quantsアクセス予算(NFR-1)の消費が分割銘柄数に比例して増えるのを防ぐ(NS-12)。
+
+    新規分割が発生した場合は、その後の by-date 一括取得が Adjustment* を後方調整し、
+    ここでの `apply_adjustment` が再補正を反映する(正しさ=独立計算一致は維持)。
 
     Args:
-        client: J-Quantsクライアント(再取得に使用)。
+        client: J-Quantsクライアント。現状の補正処理はAPIを呼ばないが、パイプラインの
+            呼び出し互換とテスト用注入フックの一貫性のため引数として保持する。
         conn: 対象DB接続。
-        reference_date: 再取得の期間基準日。省略時は本日。
+        reference_date: 呼び出し互換のため保持(現状の補正処理では未使用)。
     """
     affected = find_split_affected_codes(conn)
     for code in affected:
-        # 過去データを再取得し、最新の補正済み系列(Adjustment*)を取得する。
-        fetch_daily_quotes(client, conn, codes=[code], reference_date=reference_date)
         apply_adjustment(conn, code)
     if affected:
-        logger.info("分割補正: %d銘柄を再取得・補正しました %s", len(affected), affected)
+        logger.info("分割補正: %d銘柄をDB上で補正しました(再取得なし) %s", len(affected), affected)
     return affected
