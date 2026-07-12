@@ -23,10 +23,15 @@ _LOOKBACK_TOLERANCE_DAYS = 14
 
 @dataclass
 class VerifyReport:
-    """完全性検査の結果。"""
+    """完全性検査の結果。
+
+    - `issues`: データ欠損等の完全性違反(1件でもあれば `complete=False`)。
+    - `informational`: 欠損ではないが報告する情報(対象期間に取引実績が無い上場銘柄など)。
+    """
 
     complete: bool
     issues: list[str] = field(default_factory=list)
+    informational: list[str] = field(default_factory=list)
 
 
 def verify_data(
@@ -36,6 +41,7 @@ def verify_data(
     reference_date = reference_date or _dt.date.today()
     from_date, to_date = fetch_window(reference_date)
     issues: list[str] = []
+    informational: list[str] = []
 
     listed = [r["code"] for r in conn.execute("SELECT code FROM listed_info ORDER BY code")]
     if not listed:
@@ -66,7 +72,10 @@ def verify_data(
                 )
             ]
             if not dates:
-                issues.append(f"{code}: 対象期間の日足がありません")
+                # 対象期間に1件も日足が無い銘柄は「取引実績なし」(新規上場・TOKYO PRO
+                # MARKET等の非流動銘柄)。by-date取得はその営業日の全銘柄を一括取得するため、
+                # 全営業日で不在=そもそも取引が無い=取得すべきデータが存在しない。欠損ではない。
+                informational.append(f"{code}: 対象期間に取引実績なし(日足データ無し)")
                 continue
             # 各銘柄の観測範囲 [初日, 最終日] 内で、営業日カレンダーの欠損を検査する。
             expected = [d for d in trading_dates if dates[0] <= d <= dates[-1]]
@@ -78,4 +87,4 @@ def verify_data(
     if stmt_count == 0:
         issues.append("財務データが空です")
 
-    return VerifyReport(complete=not issues, issues=issues)
+    return VerifyReport(complete=not issues, issues=issues, informational=informational)

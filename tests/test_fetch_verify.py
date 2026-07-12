@@ -100,10 +100,25 @@ def test_missing_statements_detected():
     assert any("財務データ" in i for i in report.issues)
 
 
-def test_code_without_any_quotes_detected():
+def test_code_without_any_quotes_is_informational_not_failure():
+    # 対象期間に取引実績が無い上場銘柄(新規上場・TOKYO PRO MARKET等)は欠損ではなく参考情報。
     conn = _conn()
     _seed_complete(conn, codes=("1301",))
-    upsert(conn, "listed_info", [{"code": "9999"}])  # 日足の無い銘柄を追加
+    upsert(conn, "listed_info", [{"code": "599A0"}])  # 取引実績の無い銘柄を追加
+    report = verify_data(conn, reference_date=REF)
+    assert report.complete  # 欠損とはみなさない → exit 0 相当
+    assert report.issues == []
+    assert any("599A0" in i for i in report.informational)
+
+
+def test_internal_gap_still_fails_even_with_informational_code():
+    # 取引実績なし銘柄があっても、実データのある銘柄の内部欠損は依然として欠損。
+    conn = _conn()
+    cal = _seed_complete(conn, codes=("1301", "7203"))
+    upsert(conn, "listed_info", [{"code": "599A0"}])  # 取引実績なし(参考)
+    conn.execute("DELETE FROM daily_quotes WHERE code = ? AND date = ?", ("7203", cal[3]))
+    conn.commit()
     report = verify_data(conn, reference_date=REF)
     assert not report.complete
-    assert any("9999" in i for i in report.issues)
+    assert any("7203" in i and "欠損" in i for i in report.issues)
+    assert any("599A0" in i for i in report.informational)

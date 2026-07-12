@@ -41,6 +41,8 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
 
     if args.verify:
         report = verify_data(conn)
+        if report.informational:
+            print(f"参考: {len(report.informational)}銘柄は対象期間に取引実績なし(欠損対象外)。")
         if report.complete:
             print("データは完全です。")
             return 0
