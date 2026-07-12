@@ -66,6 +66,45 @@ DB_PATH_ENV = "SCREENER_DB_PATH"
 #: 既定のDB配置先。生データはgitignore対象の `data/` 配下に置く。
 DEFAULT_DB_PATH = Path("data") / "screener.db"
 
+# --- .env の自動ロード(NFR-3) ------------------------------------------------
+
+#: 自動ロードするファイル名(カレントディレクトリ基準)。生データ同様gitignore済み。
+ENV_FILE_NAME = ".env"
+
+
+def load_env_file(path: str | os.PathLike[str] | None = None) -> None:
+    """カレントディレクトリの `.env` を読み、未設定の環境変数だけを補充する。
+
+    なぜ:READMEの手順(`cp .env.example .env`)どおり `.env` にキーを置くだけで
+    `screener fetch` が認証できるようにする(NFR-3「APIキーは `.env` で指定」)。
+    CLIエントリポイントで1回呼ぶ。
+
+    - **既存のプロセス環境変数を上書きしない**(`os.environ.setdefault` と同義)。
+      CI・テストの `SCREENER_DB_PATH` 等の明示的な上書きを壊さないため。
+    - ファイルが無ければ何もしない。`.claude/rules/security.md`「依存は最小限に」に沿い
+      `python-dotenv` を足さず軽量に自前パースする。
+    """
+    env_path = Path(path) if path is not None else Path(ENV_FILE_NAME)
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        # 値を囲む対の引用符(' または ")のみ剥がす。中身は変更しない。
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
 
 def effective_rate_limit_per_min() -> float:
     """安全係数適用後の実効リクエスト上限(毎分)を返す。

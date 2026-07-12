@@ -60,3 +60,65 @@ def test_get_db_path_override(monkeypatch, tmp_path):
     target = tmp_path / "custom.db"
     monkeypatch.setenv(config.DB_PATH_ENV, str(target))
     assert config.get_db_path() == Path(str(target))
+
+
+# --- .env 自動ロード(NS-13 回帰テスト) --------------------------------------
+
+
+def test_load_env_file_reads_dotenv_without_export(monkeypatch, tmp_path):
+    """バグ再現: `.env` を置くだけ(export なし)で get_api_key が解決すること。"""
+    monkeypatch.delenv(config.API_KEY_ENV, raising=False)
+    (tmp_path / ".env").write_text(f"{config.API_KEY_ENV}=from-dotenv\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    config.load_env_file()
+
+    assert config.get_api_key() == "from-dotenv"
+
+
+def test_load_env_file_does_not_override_existing_env(monkeypatch, tmp_path):
+    """既存のプロセス環境変数が `.env` より優先される(CI/テストの上書きを壊さない)。"""
+    monkeypatch.setenv(config.DB_PATH_ENV, "/from/process/env.db")
+    (tmp_path / ".env").write_text(f"{config.DB_PATH_ENV}=/from/dotenv.db\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    config.load_env_file()
+
+    assert config.get_db_path() == Path("/from/process/env.db")
+
+
+def test_load_env_file_missing_is_noop(monkeypatch, tmp_path):
+    """`.env` が無いディレクトリでは何もしない(例外を出さない)。"""
+    monkeypatch.delenv(config.API_KEY_ENV, raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    config.load_env_file()  # 例外を送出しない
+
+    with pytest.raises(RuntimeError):
+        config.get_api_key()
+
+
+def test_load_env_file_ignores_comments_blanks_and_strips_quotes(monkeypatch, tmp_path):
+    """コメント行・空行を無視し、`export ` 接頭辞と対の引用符を正しく処理する。"""
+    monkeypatch.delenv(config.API_KEY_ENV, raising=False)
+    (tmp_path / ".env").write_text(
+        "# これはコメント\n\n" f'export {config.API_KEY_ENV}="quoted-value"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    config.load_env_file()
+
+    assert config.get_api_key() == "quoted-value"
+
+
+def test_main_invokes_load_env_file(monkeypatch):
+    """CLIエントリポイント main() が `.env` ロードを1回だけ呼ぶことを確認する。"""
+    from screener import cli
+
+    calls = {"n": 0}
+    monkeypatch.setattr(config, "load_env_file", lambda *a, **k: calls.__setitem__("n", calls["n"] + 1))
+
+    cli.main([])  # コマンド無し → return 2。load_env_file は呼ばれる
+
+    assert calls["n"] == 1
