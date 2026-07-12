@@ -1,4 +1,6 @@
-"""財務データ(V2 /fins/summary) 取得・保存のテスト。"""
+"""財務データ(V2 /fins/summary) 取得・保存のテスト(by-date / by-code)。"""
+
+import datetime as dt
 
 from helpers import FakeClock
 
@@ -8,17 +10,19 @@ from screener.api.rate_limiter import RateLimiter
 from screener.db import connect, init_db
 from screener.fetch import fetch_statements
 
+REF = dt.date(2026, 7, 10)
 
-def _client(responder):
+
+def _client(handler):
     clock = FakeClock()
     limiter = RateLimiter(
         config.effective_rate_limit_per_min(), time_func=clock.time, sleep_func=clock.sleep
     )
 
-    def handler(method, url, params=None, headers=None, body=None):
-        return HttpResponse(200, responder(params))
+    def transport(method, url, params=None, headers=None, body=None):
+        return HttpResponse(200, handler(url, params or {}))
 
-    return JQuantsClient(api_key="k", transport=handler, rate_limiter=limiter)
+    return JQuantsClient(api_key="k", transport=transport, rate_limiter=limiter)
 
 
 def _conn():
@@ -36,12 +40,14 @@ def _stmt(disc, code, period, sales="1000"):
     }
 
 
-def test_saves_statement_values():
-    def responder(params):
+# --- by-code -----------------------------------------------------------------
+
+def test_by_code_saves_statement_values():
+    def handler(url, params):
         return {"data": [_stmt("1001", params["code"], "FY")]}
 
     conn = _conn()
-    n = fetch_statements(_client(responder), conn, codes=["13010"])
+    n = fetch_statements(_client(handler), conn, codes=["13010"])
     assert n == 1
     row = conn.execute(
         "SELECT code, net_sales, operating_profit, ordinary_profit, profit, "
@@ -56,13 +62,12 @@ def test_saves_statement_values():
     assert row["fiscal_year_end"] == "2026-03-31"
 
 
-def test_quarter_and_full_year_distinguished():
-    def responder(params):
+def test_by_code_quarter_and_full_year_distinguished():
+    def handler(url, params):
         return {"data": [_stmt("2001", params["code"], "1Q"), _stmt("2002", params["code"], "FY")]}
 
     conn = _conn()
-    n = fetch_statements(_client(responder), conn, codes=["72030"])
-    assert n == 2
+    assert fetch_statements(_client(handler), conn, codes=["72030"]) == 2
     periods = {
         r["type_of_current_period"]
         for r in conn.execute("SELECT type_of_current_period FROM statements")
@@ -70,42 +75,59 @@ def test_quarter_and_full_year_distinguished():
     assert periods == {"1Q", "FY"}
 
 
-def test_rerun_is_idempotent():
-    def responder(params):
-        return {"data": [_stmt("3001", params["code"], "FY")]}
+# --- by-date -----------------------------------------------------------------
+
+def test_by_date_uses_calendar_and_saves_all_disclosures():
+    def handler(url, params):
+        if url.endswith(config.CALENDAR_ENDPOINT):
+            return {"data": [
+                {"Date": "2026-05-08", "HolDiv": "1"},
+                {"Date": "2026-05-09", "HolDiv": "0"},  # 土曜 → 除外
+            ]}
+        # その営業日の全開示(複数銘柄)。
+        return {"data": [_stmt("d-" + params["date"] + "-a", "13010", "FY"),
+                         _stmt("d-" + params["date"] + "-b", "72030", "1Q")]}
 
     conn = _conn()
-    fetch_statements(_client(responder), conn, codes=["13010"])
-    fetch_statements(_client(responder), conn, codes=["13010"])
-    count = conn.execute("SELECT COUNT(*) AS c FROM statements").fetchone()["c"]
-    assert count == 1
+    n = fetch_statements(_client(handler), conn, reference_date=REF)
+    assert n == 2  # 営業日1日 × 2開示
+    codes = {r["code"] for r in conn.execute("SELECT DISTINCT code FROM statements")}
+    assert codes == {"13010", "72030"}
+
+
+def test_by_date_explicit_dates():
+    def handler(url, params):
+        return {"data": [_stmt("x-" + params["date"], "13010", "FY")]}
+
+    conn = _conn()
+    n = fetch_statements(_client(handler), conn, dates=["2026-05-08", "2026-05-11"], reference_date=REF)
+    assert n == 2
+
+
+# --- 共通 --------------------------------------------------------------------
+
+def test_rerun_is_idempotent():
+    def handler(url, params):
+        return {"data": [_stmt("3001", "13010", "FY")]}
+
+    conn = _conn()
+    fetch_statements(_client(handler), conn, codes=["13010"])
+    fetch_statements(_client(handler), conn, codes=["13010"])
+    assert conn.execute("SELECT COUNT(*) AS c FROM statements").fetchone()["c"] == 1
 
 
 def test_empty_and_nonnumeric_values_become_none():
-    def responder(params):
-        return {"data": [_stmt("4001", params["code"], "FY", sales="")]}
+    def handler(url, params):
+        return {"data": [_stmt("4001", "13010", "FY", sales="")]}
 
     conn = _conn()
-    fetch_statements(_client(responder), conn, codes=["13010"])
-    row = conn.execute("SELECT net_sales FROM statements").fetchone()
-    assert row["net_sales"] is None
+    fetch_statements(_client(handler), conn, codes=["13010"])
+    assert conn.execute("SELECT net_sales FROM statements").fetchone()["net_sales"] is None
 
 
 def test_record_without_disclosure_number_skipped():
-    def responder(params):
-        return {"data": [{"Code": params["code"], "Sales": "1"}]}
+    def handler(url, params):
+        return {"data": [{"Code": "13010", "Sales": "1"}]}
 
     conn = _conn()
-    assert fetch_statements(_client(responder), conn, codes=["13010"]) == 0
-
-
-def test_codes_default_from_listed_info():
-    from screener.db import upsert
-
-    conn = _conn()
-    upsert(conn, "listed_info", [{"code": "13010"}, {"code": "72030"}])
-
-    def responder(params):
-        return {"data": [_stmt(f"d-{params['code']}", params["code"], "FY")]}
-
-    assert fetch_statements(_client(responder), conn) == 2
+    assert fetch_statements(_client(handler), conn, codes=["13010"]) == 0

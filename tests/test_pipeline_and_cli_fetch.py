@@ -20,12 +20,15 @@ def _client():
     )
 
     def handler(method, url, params=None, headers=None, body=None):
+        params = params or {}
         if url.endswith(config.LISTED_INFO_ENDPOINT):
             return HttpResponse(200, {"data": [{"Code": "13010", "CoName": "極洋"}]})
+        if url.endswith(config.CALENDAR_ENDPOINT):
+            return HttpResponse(200, {"data": [{"Date": "2026-07-10", "HolDiv": "1"}]})
         if url.endswith(config.DAILY_QUOTES_ENDPOINT):
             return HttpResponse(
                 200,
-                {"data": [{"Code": "13010", "Date": "2026-07-10", "C": 100.0, "AdjFactor": 1.0}]},
+                {"data": [{"Code": "13010", "Date": params["date"], "C": 100.0, "AdjFactor": 1.0}]},
             )
         if url.endswith(config.STATEMENTS_ENDPOINT):
             return HttpResponse(200, {"data": [{"DiscNo": "d1", "Code": "13010"}]})
