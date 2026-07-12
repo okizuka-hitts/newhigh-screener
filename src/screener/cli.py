@@ -7,6 +7,7 @@ import argparse
 import logging
 import sys
 
+from screener import config
 from screener.api.client import JQuantsClient
 from screener.db import connect, init_db
 from screener.fetch import run_fetch, verify_data
@@ -62,6 +63,7 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    config.load_env_file()  # カレントの .env を環境変数へ(既存env優先)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = build_parser()
     args = parser.parse_args(argv)

@@ -75,8 +75,35 @@ def effective_rate_limit_per_min() -> float:
     return JQUANTS_RATE_LIMIT_PER_MIN * RATE_SAFETY_FACTOR
 
 
+def load_env_file(path: str | Path | None = None) -> None:
+    """カレントの `.env`(または指定パス)を読み、未設定の環境変数のみ設定する。
+
+    既存のプロセス環境変数を上書きしない(env優先)。`python-dotenv` 等の依存を足さず、
+    `KEY=VALUE` 形式・行コメント(`#`)・空行・先頭 `export `・値の前後クォートに対応する。
+    ファイルが無ければ何もしない。CLI起動時に1回呼ぶ想定。
+    """
+    env_path = Path(path) if path is not None else Path(".env")
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+            value = value[1:-1]
+        if key:
+            os.environ.setdefault(key, value)  # 既存env優先
+
+
 def get_api_key() -> str:
-    """`.env`/環境変数からAPIキー(V2の X-API-KEY 値)を取得する。
+    """環境変数(`.env` は `load_env_file()` 経由)からAPIキー(V2の X-API-KEY 値)を取得する。
 
     未設定なら、キー値を漏らさない明確なメッセージで `RuntimeError` を送出する。
     """
