@@ -35,7 +35,7 @@ def run_fetch(
     days = trading_days(client, from_date, to_date)
     quotes = fetch_daily_quotes(client, conn, reference_date=reference_date, dates=days)
     statements = fetch_statements(client, conn, reference_date=reference_date, dates=days)
-    adjusted = detect_and_adjust(client, conn, reference_date=reference_date)
+    adjusted = detect_and_adjust(conn)  # API再取得なし(補正済み系列は一括取得済み)
     summary = {
         "listed_info": listed,
         "trading_days": len(days),

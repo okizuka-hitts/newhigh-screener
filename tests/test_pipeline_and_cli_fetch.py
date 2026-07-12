@@ -37,6 +37,42 @@ def _client():
     return JQuantsClient(api_key="k", transport=handler, rate_limiter=limiter)
 
 
+def test_run_fetch_no_per_code_refetch_for_splits():
+    # NS-12: 分割銘柄があっても run_fetch の日足リクエストは営業日数のみ(銘柄別再取得なし)。
+    clock = FakeClock()
+    limiter = RateLimiter(
+        config.effective_rate_limit_per_min(), time_func=clock.time, sleep_func=clock.sleep
+    )
+    daily_calls = {"n": 0}
+    days = ["2026-07-08", "2026-07-09"]
+
+    def handler(method, url, params=None, headers=None, body=None):
+        params = params or {}
+        if url.endswith(config.LISTED_INFO_ENDPOINT):
+            return HttpResponse(200, {"data": [{"Code": "13010", "CoName": "極洋"}]})
+        if url.endswith(config.CALENDAR_ENDPOINT):
+            return HttpResponse(200, {"data": [{"Date": d, "HolDiv": "1"} for d in days]})
+        if url.endswith(config.DAILY_QUOTES_ENDPOINT):
+            daily_calls["n"] += 1
+            assert "code" not in params  # by-dateのみ(銘柄別再取得をしない)
+            # 07-09に分割(AdjFactor=0.5)を含める。
+            factor = 0.5 if params["date"] == "2026-07-09" else 1.0
+            return HttpResponse(200, {"data": [
+                {"Code": "13010", "Date": params["date"], "C": 100.0,
+                 "AdjFactor": factor, "AdjC": 50.0, "AdjVo": 2000.0, "Vo": 1000.0}
+            ]})
+        if url.endswith(config.STATEMENTS_ENDPOINT):
+            return HttpResponse(200, {"data": []})
+        raise AssertionError(url)
+
+    client = JQuantsClient(api_key="k", transport=handler, rate_limiter=limiter)
+    conn = connect(":memory:")
+    init_db(conn)
+    summary = run_fetch(client, conn, reference_date=REF)
+    assert summary["adjusted_codes"] == 1  # 分割検知・補正済み
+    assert daily_calls["n"] == len(days)  # 営業日数のみ。銘柄別の再取得は発生しない
+
+
 def test_run_fetch_calls_full_pipeline():
     conn = connect(":memory:")
     init_db(conn)
