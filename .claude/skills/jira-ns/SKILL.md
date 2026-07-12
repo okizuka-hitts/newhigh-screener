@@ -119,7 +119,9 @@ addCommentToJiraIssue { cloudId, issueIdOrKey: "NS-5", commentBody: "..." }
 getConfluenceSpaces / createConfluencePage / updateConfluencePage
 ```
 
-- スペース `NS` に `[EPICキー] 検証記録 YYYY-MM-DD #連番 (判定)` を作成し、`[EPICキー] 検証履歴` 索引ページに追記する
+- 1検証実行=1ページ(モード問わず)。スペース `NS` に、EPIC受け入れ検証は `[EPICキー] 検証記録 YYYY-MM-DD #連番 (判定)`、ストーリー検証は `[チケットキー] 検証記録 YYYY-MM-DD #連番 (判定)` を作成する
+- いずれも親ページは `[EPICキー] 検証履歴` 索引。実行日・対象チケット・モード・判定・ページリンクを追記する
+- ページ作成後、対象チケットへ要約・判定・ページURLをコメントする(`addCommentToJiraIssue`)
 - J-Quantsの生データを本文・添付に含めない(集計結果のみ)
 
 ## トラブルシューティング
