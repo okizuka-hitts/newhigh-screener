@@ -4,7 +4,13 @@
 """
 
 import argparse
+import logging
 import sys
+
+from screener import config
+from screener.api.client import JQuantsClient
+from screener.db import connect, init_db
+from screener.fetch import run_fetch, verify_data
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,13 +35,50 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _cmd_fetch(args: argparse.Namespace) -> int:
+    """fetchサブコマンド。取得パイプライン実行 / `--verify` で完全性検査。"""
+    conn = connect()
+    init_db(conn)
+
+    if args.verify:
+        report = verify_data(conn)
+        if report.informational:
+            print(f"参考: {len(report.informational)}銘柄は対象期間に取引実績なし(欠損対象外)。")
+        if report.complete:
+            print("データは完全です。")
+            return 0
+        print("データ欠損を検出しました。fetch を実行してデータを補完してください:", file=sys.stderr)
+        for issue in report.issues:
+            print(f"  - {issue}", file=sys.stderr)
+        return 1
+
+    client = JQuantsClient()
+    summary = run_fetch(client, conn)
+    print(
+        "fetch完了: "
+        f"銘柄 {summary['listed_info']}件 / 日足 {summary['daily_quotes']}件 / "
+        f"財務 {summary['statements']}件 / 分割補正 {summary['adjusted_codes']}銘柄"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    config.load_env_file()  # カレントの .env を環境変数へ(既存env優先)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.command is None:
         parser.print_help()
         return 2
+
+    if args.command == "fetch":
+        try:
+            return _cmd_fetch(args)
+        except RuntimeError as exc:
+            # 認証・API・設定エラー等は1行で理由を示して終了する(スタックトレースを見せない)。
+            print(f"エラー: {exc}", file=sys.stderr)
+            return 1
 
     print(f"screener {args.command}: 未実装です(対応するEPICで実装されます)", file=sys.stderr)
     return 1
