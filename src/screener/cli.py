@@ -54,6 +54,9 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
 
     client = JQuantsClient()
     summary = run_fetch(client, conn)
+    if summary.get("skipped"):
+        print(summary["message"])
+        return 0
     print(
         "fetch完了: "
         f"銘柄 {summary['listed_info']}件 / 日足 {summary['daily_quotes']}件 / "

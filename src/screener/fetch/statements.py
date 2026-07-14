@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from screener import config
@@ -69,6 +69,7 @@ def fetch_statements(
     reference_date: _dt.date | None = None,
     dates: Sequence[str] | None = None,
     codes: Sequence[str] | None = None,
+    on_progress: Callable[[], None] | None = None,
 ) -> int:
     """財務データを取得してDBへ保存する。保存件数(行数)を返す。
 
@@ -78,6 +79,7 @@ def fetch_statements(
         reference_date: by-date時の期間基準日。省略時は本日。
         dates: by-dateで取得する営業日リスト。省略時はカレンダーから営業日を求める。
         codes: 指定時はby-code(銘柄別)で取得する。
+        on_progress: by-dateループで1営業日処理するごとに呼ぶ進捗フック(NS-18)。
     """
     total = 0
     if codes is not None:
@@ -93,5 +95,7 @@ def fetch_statements(
     for day in day_list:
         items = client.get_paginated(config.STATEMENTS_ENDPOINT, params={"date": day})
         total += _save(conn, items)
+        if on_progress is not None:
+            on_progress()
     logger.info("財務データ(by-date): %d営業日 / 保存 %d件", len(day_list), total)
     return total
