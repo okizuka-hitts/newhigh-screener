@@ -42,7 +42,7 @@ NSプロジェクトのチケット操作は claude.ai 連携の Atlassian Rovo 
 
 ### ラベル
 
-`needs-human` / `verifier` / `test-quality`(意味は jira-workflow.md 参照)
+`needs-human` / `deferred` / `verifier` / `test-quality`(意味は jira-workflow.md 参照)
 
 ## 操作レシピ
 
@@ -105,6 +105,15 @@ transitionJiraIssue { cloudId, issueIdOrKey: "NS-5", transition: { id: "21" } }
 - PR作成+ストーリー検証(軽量モード)PASS後: `31`(レビュー中)+ PR URLをコメント(DEFERRED項目があれば明記)
 - 人間がPRをマージしたのを確認後: `41`(完了)。**マージ前に完了にしない**(遷移は常に事実の後追い)
 - **EPICにはtransitionJiraIssueを絶対に使わない**(全遷移が人間専用。進行中への遷移はループ起動トリガーで、エージェントが触ると自己発火する)。ループ正常終了時はPASS報告のコメント(`addCommentToJiraIssue`)のみ行う
+
+### ラベル付与(既存チケットへの後付け)
+
+```
+editJiraIssue { cloudId, issueIdOrKey: "NS-5", fields: { labels: ["<既存ラベル...>", "deferred"] } }
+```
+
+- **labels は配列ごと置き換え**。必ず先に `getJiraIssue` で現在の labels を読み、既存ラベルに追記した配列を渡す(新しいラベルだけの配列を渡すと既存ラベルが消える)
+- 付与とセットで理由コメントを残す(`deferred` は試行内容・行き詰まり理由・選択肢、`needs-human` は判断してほしい内容と選択肢)
 
 ### コメント
 
